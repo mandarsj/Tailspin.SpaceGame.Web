@@ -1,0 +1,96 @@
+trigger:
+- release-pipeline
+
+pool:
+  name: shagent
+  demands:
+    - agent.os -equals Windows_NT
+
+variables:
+  buildConfiguration: 'Release'
+  wwwrootDir: 'Tailspin.SpaceGame.Web\wwwroot'
+  dotnetSdkVersion: '8.x'
+  nodeVersion: '18.x'
+
+steps:
+- checkout: self
+
+# =================================
+# INSTALL NODE.JS + NPM
+# =================================
+- task: NodeTool@0
+  displayName: 'Install Node.js $(nodeVersion)'
+  inputs:
+    versionSpec: '$(nodeVersion)'
+    checkLatest: true
+
+- powershell: |
+    node --version
+    npm --version
+  displayName: 'Verify Node.js and npm'
+
+# =================================
+# INSTALL .NET SDK (NET 8)
+# =================================
+- task: UseDotNet@2
+  displayName: 'Use .NET SDK $(dotnetSdkVersion)'
+  inputs:
+    version: '$(dotnetSdkVersion)'
+
+# =================================
+# NPM INSTALL
+# =================================
+- task: Npm@1
+  displayName: 'Run npm install'
+  inputs:
+    verbose: false
+
+# =================================
+# GULP (local)
+# =================================
+- powershell: |
+    npx gulp
+  displayName: 'Run gulp tasks'
+
+# =================================
+# BUILD INFO
+# =================================
+- powershell: |
+    "$(Build.DefinitionName), $(Build.BuildId), $(Build.BuildNumber)" |
+    Out-File -Encoding utf8 buildinfo.txt
+  displayName: 'Write build info'
+  workingDirectory: $(wwwrootDir)
+
+# =================================
+# DOTNET BUILD
+# =================================
+- task: DotNetCoreCLI@2
+  displayName: 'Restore project dependencies'
+  inputs:
+    command: 'restore'
+    projects: '**/*.csproj'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build the project - $(buildConfiguration)'
+  inputs:
+    command: 'build'
+    arguments: '--no-restore --configuration $(buildConfiguration)'
+    projects: '**/*.csproj'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Publish the project - $(buildConfiguration)'
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: '**/*.csproj'
+    arguments: >
+      --no-build
+      --configuration $(buildConfiguration)
+      --output "$(Build.ArtifactStagingDirectory)\$(buildConfiguration)"
+    zipAfterPublish: true
+
+# =================================
+# PUBLISH ARTIFACT
+# =================================
+- publish: '$(Build.ArtifactStagingDirectory)'
+  artifact: drop

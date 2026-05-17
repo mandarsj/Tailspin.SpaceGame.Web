@@ -1,0 +1,45 @@
+trigger: none   # Déploiement manuel
+
+resources:
+  pipelines:
+  - pipeline: buildPipeline
+    source: lab                # ⚠️ NOM EXACT du pipeline de BUILD
+    trigger: none
+
+stages:
+- stage: Deploy
+  displayName: Deploy to Azure App Service
+  jobs:
+  - job: Deploy
+    displayName: Deploy Web App
+    pool:
+      name: shagent             # ✅ Agent self-hosted
+      demands:
+        - agent.os -equals Windows_NT
+    workspace:
+      clean: all                # ✅ CRUCIAL avec un agent self-hosted
+
+    steps:
+    # =====================================
+    # DOWNLOAD ARTIFACT DU BUILD
+    # =====================================
+    - download: buildPipeline
+      artifact: drop
+      displayName: Download build artifact
+
+    # DEBUG (très utile)
+    - powershell: |
+        Write-Host "=== Artifact content ==="
+        Get-ChildItem -Recurse "$(Pipeline.Workspace)\drop"
+      displayName: Debug - List artifact contents
+
+    # =====================================
+    # DEPLOY AZURE APP SERVICE
+    # =====================================
+    - task: AzureWebApp@1
+      displayName: Deploy Azure App Service
+      inputs:
+        azureSubscription: 'Azure for Students (eecdd769-7472-4862-bc43-1f2e483b0ac5)'
+        appName: webappsvcdev11              # ⚠️ NOM EXACT de l’App Service
+        package: '$(Pipeline.Workspace)/drop/**/*.zip'
+        deploymentMethod: runFromPackage
